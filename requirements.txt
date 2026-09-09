@@ -1,0 +1,12 @@
+playwright
+python-dotenv
+sqlalchemy
+apscheduler
+plyer
+typer
+pydantic
+pydantic-settings
+pypdf
+tzdata
+pytest
+ruff

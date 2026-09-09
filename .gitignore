@@ -1,0 +1,38 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Database (local only — never commit portal data)
+*.db
+*.db-journal
+*.sqlite3
+
+# Browser session (contains cookies/auth)
+/data/browser-profile/
+
+# Logs
+/logs/
+*.log
+
+# Generated screenshots
+/screenshots/
+
+# Test/cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Diagnostic captures (tools/capture_portal.py, tools/grab_js.py)
+/tools/dumps/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

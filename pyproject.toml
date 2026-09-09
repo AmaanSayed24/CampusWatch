@@ -1,0 +1,16 @@
+[project]
+name = "campuswatch"
+version = "0.1.0"
+description = "College Portal Assignment Tracking Agent - monitors the e-learning portal for assignments and reminds you before deadlines."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
