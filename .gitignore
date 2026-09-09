@@ -36,3 +36,5 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+tools/probe_out*.txt
