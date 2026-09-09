@@ -43,7 +43,7 @@ class NotificationService:
 
     def new_assignment(
         self, subject_name: str, assignment_title: str, deadline, url: str | None
-    ) -> None:
+    ) -> bool:
         lines = [
             f"Subject: {subject_name}",
             f"Assignment: {assignment_title}",
@@ -51,12 +51,12 @@ class NotificationService:
         ]
         if url:
             lines.append(f"Open portal: {url}")
-        self.send("📚 New Assignment", "\n".join(lines))
+        return self.send("📚 New Assignment", "\n".join(lines))
 
     def deadline_changed(
         self, subject_name: str, assignment_title: str, old_deadline, new_deadline
-    ) -> None:
-        self.send(
+    ) -> bool:
+        return self.send(
             "🔄 Deadline Updated",
             "\n".join(
                 [
@@ -69,10 +69,10 @@ class NotificationService:
 
     def reminder(
         self, subject_name: str, assignment_title: str, deadline, remaining: timedelta
-    ) -> None:
+    ) -> bool:
         now = datetime.now(deadline.tzinfo) if deadline and deadline.tzinfo else datetime.now()
         if deadline is not None and deadline.date() == now.date():
-            self.send(
+            return self.send(
                 "🚨 Due Today",
                 "\n".join(
                     [
@@ -82,8 +82,7 @@ class NotificationService:
                     ]
                 ),
             )
-            return
-        self.send(
+        return self.send(
             "⏰ Assignment Reminder",
             "\n".join(
                 [
@@ -94,8 +93,8 @@ class NotificationService:
             ),
         )
 
-    def overdue(self, subject_name: str, assignment_title: str, deadline) -> None:
-        self.send(
+    def overdue(self, subject_name: str, assignment_title: str, deadline) -> bool:
+        return self.send(
             "❗ Overdue Assignment",
             f"{subject_name} — {assignment_title}\nDeadline was: {format_deadline(deadline)}",
         )

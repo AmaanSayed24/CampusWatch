@@ -62,7 +62,9 @@ def normalize_assignment(raw: dict, subject_portal_id: str, tz: ZoneInfo) -> dic
         "assigned_at": None,
         "deadline": deadline,
         "status": payload["status"],
-        "source_url": url,
+        # Preserve the actual document URL when PDF enrichment or document
+        # tracking supplied one; fall back to the classroom URL.
+        "source_url": raw.get("source_url") or url,
         "content_hash": hashing.content_hash(payload),
     }
 

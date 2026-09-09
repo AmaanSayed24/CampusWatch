@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import Page
 
@@ -37,7 +38,15 @@ class PdfDeadlineService:
             if raw.get("deadline_iso") or raw.get("deadline_text"):
                 continue  # portal already provides a due date
             url = raw.get("source_url") or ""
-            if not url.lower().split("?")[0].endswith(".pdf"):
+            if not url:
+                continue
+            # Portal document links are not always named *.pdf; some are
+            # API/viewer URLs. We therefore validate the downloaded payload
+            # (%PDF) instead of relying on the URL suffix. Resolve relative
+            # document paths against the classroom URL.
+            url = urljoin(raw.get("url") or "", url)
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"}:
                 continue
 
             cached = self._repo.get_pdf_deadline(url)

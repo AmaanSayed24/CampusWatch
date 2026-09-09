@@ -52,14 +52,19 @@ class ReminderService:
             self._repo.record_notification(assignment.id, "NEW_ASSIGNMENT")
 
     def notify_deadline_change(self, assignment: Assignment, old_deadline, new_deadline) -> None:
-        if self._repo.has_notification(assignment.id, "DEADLINE_CHANGED"):
+        # Dedupe per new value: if the faculty changes the deadline again, the
+        # student should be notified again (§14: never repeat the same message).
+        notification_type = "DEADLINE_CHANGED"
+        if new_deadline is not None:
+            notification_type += ":" + new_deadline.strftime("%Y%m%d%H%M")
+        if self._repo.has_notification(assignment.id, notification_type):
             return
         subject_name = self._subject_name(assignment)
         sent = self._notifier.deadline_changed(
             subject_name, assignment.title, old_deadline, new_deadline
         )
         if sent:
-            self._repo.record_notification(assignment.id, "DEADLINE_CHANGED")
+            self._repo.record_notification(assignment.id, notification_type)
 
     def process_due_soon(self) -> int:
         """Check every active assignment and send any windowed reminders due.
@@ -96,18 +101,21 @@ class ReminderService:
                         sent_count += 1
                 continue
 
-            # Smallest window that has been reached and not yet notified.
+            # Smallest configured window that has been reached (§14). If its
+            # reminder was already sent, stop — never fall through to a larger
+            # (older-news) window on a later run.
             reached = [w for w in windows if remaining <= w]
-            for window in reversed(reached):  # smallest first
-                notification_type = self._window_type(window)
-                if self._repo.has_notification(assignment.id, notification_type):
-                    continue
-                if self._notifier.reminder(
-                    subject_name, assignment.title, assignment.deadline, remaining
-                ):
-                    self._repo.record_notification(assignment.id, notification_type)
-                    sent_count += 1
-                break  # one reminder per assignment per run
+            if not reached:
+                continue
+            window = reached[-1]  # smallest, as `windows` is largest-first
+            notification_type = self._window_type(window)
+            if self._repo.has_notification(assignment.id, notification_type):
+                continue
+            if self._notifier.reminder(
+                subject_name, assignment.title, assignment.deadline, remaining
+            ):
+                self._repo.record_notification(assignment.id, notification_type)
+                sent_count += 1
 
         return sent_count
 

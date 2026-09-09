@@ -31,31 +31,44 @@ class ClassroomScraper:
 
         subjects: list[dict] = []
         seen: set[str] = set()
-        with ResponseCollector(page, ("/api/subjects",)) as collector:
-            # The subject list API fires on the Classroom pages, not the
-            # dashboard: join page first, then the classroom's subjects page.
-            await page.goto(f"{origin}/classrooms/join", wait_until="domcontentloaded")
+        attempts = 2
+        for attempt in range(1, attempts + 1):
+            with ResponseCollector(page, ("/api/subjects",)) as collector:
+                # The subject list API fires on the Classroom pages, not the
+                # dashboard: join page first, then the classroom's subjects page.
+                join_url = f"{origin}/classrooms/join"
+                if attempt == 1:
+                    await page.goto(join_url, wait_until="domcontentloaded")
+                else:
+                    await page.reload(wait_until="domcontentloaded")
+                await page.wait_for_timeout(3_000)
+                open_button = page.get_by_role("button", name=re.compile(r"^Open ", re.I)).first
+                if await open_button.count() > 0:
+                    await open_button.click()
+                await page.wait_for_timeout(5_000)
+
+                data = collector.decrypted("/api/subjects")
+                if data:
+                    for item in data.get("items", []):
+                        if item.get("deleted"):
+                            continue
+                        name = re.sub(r"\s+", " ", item.get("name") or "").strip()
+                        portal_id = item.get("_id")
+                        if not name or not portal_id or portal_id in seen:
+                            continue
+                        seen.add(portal_id)
+                        url = (
+                            f"{origin}/classrooms/{item.get('classroom')}"
+                            f"/subjects/{portal_id}"
+                        )
+                        subjects.append({"portal_id": portal_id, "name": name, "url": url})
+
+            if subjects or attempt == attempts:
+                break
+            logger.warning("No /api/subjects payload captured; retrying page load")
             await page.wait_for_timeout(3_000)
-            open_button = page.get_by_role("button", name=re.compile(r"^Open ", re.I)).first
-            if await open_button.count() > 0:
-                await open_button.click()
-            await page.wait_for_timeout(5_000)
 
-            data = collector.decrypted("/api/subjects")
-            if not data:
-                logger.warning("No /api/subjects payload captured; cannot discover subjects")
-                return []
-
-            for item in data.get("items", []):
-                if item.get("deleted"):
-                    continue
-                name = re.sub(r"\s+", " ", item.get("name") or "").strip()
-                portal_id = item.get("_id")
-                if not name or not portal_id or portal_id in seen:
-                    continue
-                seen.add(portal_id)
-                url = f"{origin}/classrooms/{item.get('classroom')}/subjects/{portal_id}"
-                subjects.append({"portal_id": portal_id, "name": name, "url": url})
-
+        if not subjects:
+            logger.warning("No /api/subjects payload captured; cannot discover subjects")
         logger.info("Found %d subjects", len(subjects))
         return subjects

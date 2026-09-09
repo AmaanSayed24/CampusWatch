@@ -29,7 +29,12 @@ class AssignmentScraper:
         self._settings = settings
 
     async def get_assignments(self, page: Page, subject: dict) -> list[dict]:
-        """Visit a subject page and return raw assignment records."""
+        """Visit a subject page and return raw assignment records.
+
+        The Classwork payloads arrive as XHR responses which are occasionally
+        missed (slow render / navigation race). When nothing was captured we
+        retry the page load once before giving up for this subject.
+        """
         subject_id = subject.get("portal_id")
         subject_url = subject.get("url")
         if not subject_id or not subject_url:
@@ -38,29 +43,55 @@ class AssignmentScraper:
         works_url = f"/api/classroom-works/{subject_id}"
         topics_url = f"/api/classroom-topics/{subject_id}"
 
-        works: dict[str, dict] = {}
-        with ResponseCollector(page, (works_url, topics_url)) as collector:
-            await page.goto(subject_url, wait_until="domcontentloaded")
-            try:
-                await page.get_by_text("Classwork", exact=False).first.click(timeout=8_000)
-            except Exception:
-                logger.debug("Classwork tab click failed for %s", subject.get("name"))
-            await page.wait_for_timeout(4_000)
+        attempts = 2
+        for attempt in range(1, attempts + 1):
+            works: dict[str, dict] = {}
+            with ResponseCollector(page, (works_url, topics_url)) as collector:
+                if attempt == 1:
+                    await page.goto(subject_url, wait_until="domcontentloaded")
+                else:
+                    await page.reload(wait_until="domcontentloaded")
+                try:
+                    await page.get_by_text("Classwork", exact=False).first.click(timeout=8_000)
+                except Exception:
+                    logger.debug("Classwork tab click failed for %s", subject.get("name"))
+                await page.wait_for_timeout(4_000)
 
-            for data in (collector.decrypted(works_url), collector.decrypted(topics_url)):
-                if not data:
-                    continue
-                for item in data.get("items", []):
-                    # classroom-works items are the works themselves; topic items
-                    # embed their works under `works`.
-                    if "works" in item:
-                        candidates = item.get("works") or []
-                    else:
-                        candidates = [item]
-                    for work in candidates:
-                        work_id = work.get("_id")
-                        if work_id and not work.get("deleted"):
-                            works[work_id] = work
+                works_data = collector.decrypted(works_url)
+                topics_data = collector.decrypted(topics_url)
+                logger.debug(
+                    "%s payloads (attempt %d): works=%s topics=%s",
+                    subject.get("name"),
+                    attempt,
+                    "captured(%d items)" % len(works_data.get("items", []))
+                    if works_data
+                    else "none",
+                    "captured(%d items)" % len(topics_data.get("items", []))
+                    if topics_data
+                    else "none",
+                )
+                for data in (works_data, topics_data):
+                    if not data:
+                        continue
+                    for item in data.get("items", []):
+                        # classroom-works items are the works themselves; topic items
+                        # embed their works under `works`.
+                        if "works" in item:
+                            candidates = item.get("works") or []
+                        else:
+                            candidates = [item]
+                        for work in candidates:
+                            work_id = work.get("_id")
+                            if work_id and not work.get("deleted"):
+                                works[work_id] = work
+
+            if works or attempt == attempts:
+                break
+            logger.warning(
+                "No classwork payloads captured for %s; retrying page load",
+                subject.get("name"),
+            )
+            await page.wait_for_timeout(3_000)
 
         records = [raw for raw in (self._to_raw(w, subject) for w in works.values()) if raw]
         logger.info("%s: %d assignments", subject.get("name"), len(records))

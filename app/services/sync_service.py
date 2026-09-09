@@ -57,6 +57,17 @@ class SyncService:
             page = await self._browser.start()
             page = await self._login.ensure_authenticated(page)
             subjects = await self._classroom.discover_subjects(page)
+            if not subjects:
+                # A transient capture failure must never deactivate subjects
+                # discovered on earlier successful runs.
+                stats.errors += 1
+                self._repo.finish_sync_run(
+                    run_id, "FAILED", 0, 0, "No subjects discovered (API payloads not captured)"
+                )
+                logger.error(
+                    "Subject discovery failed; skipping sync to protect existing data"
+                )
+                return stats
             self._repo.deactivate_subjects_not_in(
                 {s["portal_id"] for s in subjects}
             )

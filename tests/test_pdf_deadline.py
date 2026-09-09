@@ -200,3 +200,21 @@ def test_pdf_deadline_service_enrich(tmp_path):
     raw2 = dict(raw)
     enriched2 = asyncio.run(service.enrich(_FakePage(_FakeResponse()), [raw2]))
     assert enriched2[0]["deadline_iso"] == "2026-10-25T23:59:00"
+
+
+def test_normalize_assignment_preserves_document_source_url():
+    from app.parsers.assignment_parser import normalize_assignment
+
+    raw = {
+        "title": "Assignment 1",
+        "url": "https://example.com/classroom/123",
+        "source_url": "/uploads/assignment-1",
+        "portal_id": "work-1",
+        "description": "Document assignment.",
+        "deadline_text": None,
+        "deadline_iso": "2026-09-20T23:59:00",
+        "status": "PENDING",
+    }
+    normalized = normalize_assignment(raw, "subject-1", TZ)
+    assert normalized is not None
+    assert normalized["source_url"] == "/uploads/assignment-1"
