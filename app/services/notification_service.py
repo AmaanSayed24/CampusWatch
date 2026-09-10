@@ -100,7 +100,7 @@ class NotificationService:
         )
 
     def sync_issue(self, when: str) -> None:
-        self.send(
+        return self.send(
             "⚠️ College portal sync issue",
             (
                 f"The portal could not be scanned successfully at {when}.\n"
@@ -110,4 +110,4 @@ class NotificationService:
         )
 
     def daily_summary(self, text: str) -> None:
-        self.send("📋 College Daily Summary", text)
+        return self.send("📋 College Daily Summary", text)

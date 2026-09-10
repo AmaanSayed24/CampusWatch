@@ -84,3 +84,17 @@ def test_sync_run_lifecycle(repo: Repository):
     assert run.subjects_checked == 6
     assert run.assignments_found == 10
     assert run.finished_at is not None
+
+
+def test_get_previous_sync_run(repo: Repository):
+    assert repo.get_previous_sync_run(1) is None  # nothing before run 1
+
+    first = repo.start_sync_run()
+    repo.finish_sync_run(first, "SUCCESS", 1, 2)
+    second = repo.start_sync_run()
+    repo.finish_sync_run(second, "FAILED", 0, 0, "payloads not captured")
+
+    previous = repo.get_previous_sync_run(second)
+    assert previous is not None
+    assert previous.id == first
+    assert previous.status == "SUCCESS"

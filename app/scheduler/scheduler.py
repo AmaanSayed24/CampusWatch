@@ -56,6 +56,6 @@ class AgentScheduler:
 
     def _daily_summary_job(self) -> None:
         try:
-            self._sync_service._reminders.send_daily_summary()
+            self._sync_service.send_daily_summary()
         except Exception:
             logger.exception("Daily summary failed")

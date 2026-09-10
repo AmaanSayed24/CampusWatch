@@ -175,6 +175,16 @@ class Repository:
         with self._session_factory() as session:
             return session.scalar(select(SyncRun).order_by(SyncRun.id.desc()).limit(1))
 
+    def get_previous_sync_run(self, current_run_id: int) -> SyncRun | None:
+        """The sync run before `current_run_id`, for failure-transition checks."""
+        with self._session_factory() as session:
+            return session.scalar(
+                select(SyncRun)
+                .where(SyncRun.id < current_run_id)
+                .order_by(SyncRun.id.desc())
+                .limit(1)
+            )
+
     # --- PDF deadline extraction cache ---
 
     def get_pdf_deadline(self, url: str) -> PdfDeadlineCache | None:

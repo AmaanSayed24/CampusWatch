@@ -16,9 +16,12 @@ TZ = ZoneInfo("Asia/Kolkata")
         ("Sep 15, 2026", "2026-09-15T00:00:00+05:30"),
         ("September 15, 2026", "2026-09-15T00:00:00+05:30"),
         ("15 September 2026", "2026-09-15T00:00:00+05:30"),
+        ("15th September 2026", "2026-09-15T00:00:00+05:30"),
+        ("15Th September 2026", "2026-09-15T00:00:00+05:30"),
         ("15/09/2026 11:59 PM", "2026-09-15T23:59:00+05:30"),
         ("15/09/2026 23:59", "2026-09-15T23:59:00+05:30"),
         ("15 September 2026, 11:59 PM", "2026-09-15T23:59:00+05:30"),
+        ("Sep 15th, 2026", "2026-09-15T00:00:00+05:30"),
         ("2026-09-15", "2026-09-15T00:00:00+05:30"),
         ("2026-09-15T23:59:00", "2026-09-15T23:59:00+05:30"),
         ("", None),
@@ -41,6 +44,13 @@ def test_extract_deadline_from_text():
     result = extract_deadline_from_text(text, TZ)
     assert result is not None
     assert result.day == 20 and result.month == 9 and result.year == 2026
+
+
+def test_extract_deadline_from_text_ordinal():
+    text = "MCA Assignment 1: submit by 15th September 2026."
+    result = extract_deadline_from_text(text, TZ)
+    assert result is not None
+    assert result.day == 15 and result.month == 9 and result.year == 2026
 
 
 def test_extract_deadline_from_text_without_date():

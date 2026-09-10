@@ -202,6 +202,70 @@ def test_pdf_deadline_service_enrich(tmp_path):
     assert enriched2[0]["deadline_iso"] == "2026-10-25T23:59:00"
 
 
+def test_pdf_deadline_service_caches_non_pdf_payload(tmp_path):
+    """HTML subject pages are validated once and never re-downloaded."""
+    import asyncio
+
+    from app.database.connection import init_db
+    from app.services.pdf_deadline_service import NOT_PDF_CONFIDENCE, PdfDeadlineService
+
+    settings_stub = type(
+        "S",
+        (),
+        {
+            "database_url": f"sqlite:///{tmp_path / 't.db'}",
+            "timezone": "Asia/Kolkata",
+        },
+    )()
+    settings_stub.get_timezone = lambda: TZ
+    repo = Repository(init_db(settings_stub))
+    service = PdfDeadlineService(settings_stub, repo)
+
+    downloads = []
+
+    class _FakeHtmlResponse:
+        ok = True
+
+        async def body(self) -> bytes:
+            downloads.append(1)
+            return b"<html><body>subject page</body></html>"
+
+    class _FakeRequest:
+        def __init__(self, response):
+            self._response = response
+
+        async def get(self, url, *, timeout=None):
+            return self._response
+
+    class _FakePage:
+        def __init__(self, response):
+            self.context = type("C", (), {"request": _FakeRequest(response)})()
+
+    url = "https://example.com/subject-page"
+    raw = {
+        "title": "Assignment 1",
+        "url": "https://example.com/classroom",
+        "portal_id": "w-1",
+        "deadline_text": None,
+        "deadline_iso": None,
+        "status": "PENDING",
+        "source_url": url,
+    }
+
+    enriched = asyncio.run(service.enrich(_FakePage(_FakeHtmlResponse()), [raw]))
+    assert enriched[0]["deadline_iso"] is None  # N/A fallback
+    assert len(downloads) == 1
+
+    cached = repo.get_pdf_deadline(url)
+    assert cached is not None
+    assert cached.deadline is None
+    assert cached.confidence == NOT_PDF_CONFIDENCE
+
+    # Second sync must not download again.
+    asyncio.run(service.enrich(_FakePage(_FakeHtmlResponse()), [dict(raw)]))
+    assert len(downloads) == 1
+
+
 def test_normalize_assignment_preserves_document_source_url():
     from app.parsers.assignment_parser import normalize_assignment
 

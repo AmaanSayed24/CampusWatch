@@ -28,12 +28,19 @@ class AssignmentScraper:
     def __init__(self, settings: Settings):
         self._settings = settings
 
-    async def get_assignments(self, page: Page, subject: dict) -> list[dict]:
+    async def get_assignments(self, page: Page, subject: dict) -> list[dict] | None:
         """Visit a subject page and return raw assignment records.
 
         The Classwork payloads arrive as XHR responses which are occasionally
         missed (slow render / navigation race). When nothing was captured we
         retry the page load once before giving up for this subject.
+
+        Returns:
+            None  — no payloads were captured at all; the subject state is
+                    unknown and must NOT be treated as "no assignments".
+            []    — payloads captured; the subject simply has no trackable
+                    assignments.
+            [...] — captured raw assignment records.
         """
         subject_id = subject.get("portal_id")
         subject_url = subject.get("url")
@@ -59,6 +66,7 @@ class AssignmentScraper:
 
                 works_data = collector.decrypted(works_url)
                 topics_data = collector.decrypted(topics_url)
+                captured_any = works_data is not None or topics_data is not None
                 logger.debug(
                     "%s payloads (attempt %d): works=%s topics=%s",
                     subject.get("name"),
@@ -85,13 +93,22 @@ class AssignmentScraper:
                             if work_id and not work.get("deleted"):
                                 works[work_id] = work
 
-            if works or attempt == attempts:
+            if works or captured_any or attempt == attempts:
                 break
             logger.warning(
                 "No classwork payloads captured for %s; retrying page load",
                 subject.get("name"),
             )
             await page.wait_for_timeout(3_000)
+
+        if not captured_any:
+            logger.warning(
+                "No classwork payloads captured for %s after %d attempts; "
+                "subject state unknown",
+                subject.get("name"),
+                attempts,
+            )
+            return None
 
         records = [raw for raw in (self._to_raw(w, subject) for w in works.values()) if raw]
         logger.info("%s: %d assignments", subject.get("name"), len(records))

@@ -2,7 +2,7 @@
 
 Usage:
     python run_agent.py sync-now
-    python run_agent.py run
+    python run_agent.py sync          (scheduler: immediate pass, then periodic)
     python run_agent.py assignments
     python run_agent.py upcoming
     python run_agent.py overdue

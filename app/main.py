@@ -45,6 +45,7 @@ class App:
             classroom_scraper=self.classroom_scraper,
             assignment_scraper=self.assignment_scraper,
             reminder_service=self.reminder_service,
+            notifier=self.notifier,
         )
 
     # --- Commands ---

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.automation.assignments import AssignmentScraper
 from app.automation.browser import BrowserManager
@@ -13,6 +14,7 @@ from app.config.settings import Settings
 from app.database.repository import Repository
 from app.parsers.assignment_parser import normalize_assignment
 from app.services.change_detector import compare
+from app.services.notification_service import NotificationService
 from app.services.pdf_deadline_service import PdfDeadlineService
 from app.services.reminder_service import ReminderService
 
@@ -38,6 +40,7 @@ class SyncService:
         classroom_scraper: ClassroomScraper,
         assignment_scraper: AssignmentScraper,
         reminder_service: ReminderService,
+        notifier: NotificationService,
     ):
         self._settings = settings
         self._repo = repository
@@ -46,7 +49,14 @@ class SyncService:
         self._classroom = classroom_scraper
         self._assignments = assignment_scraper
         self._reminders = reminder_service
+        self._notifier = notifier
         self._pdf_deadlines = PdfDeadlineService(settings, repository)
+
+    # --- Public delegates (used by the scheduler / CLI) ---
+
+    def send_daily_summary(self) -> None:
+        """Public delegate for the scheduler's daily-summary job."""
+        self._reminders.send_daily_summary()
 
     async def run_sync(self) -> SyncStats:
         stats = SyncStats()
@@ -64,6 +74,7 @@ class SyncService:
                 self._repo.finish_sync_run(
                     run_id, "FAILED", 0, 0, "No subjects discovered (API payloads not captured)"
                 )
+                self._notify_sync_issue_once(run_id)
                 logger.error(
                     "Subject discovery failed; skipping sync to protect existing data"
                 )
@@ -80,6 +91,16 @@ class SyncService:
                     stats.subjects_checked += 1
 
                     raw_assignments = await self._assignments.get_assignments(page, subject)
+                    if raw_assignments is None:
+                        # Payloads not captured -> state unknown. Never treat
+                        # this as "no assignments"; record a real error instead.
+                        stats.errors += 1
+                        logger.error(
+                            "Classwork payloads not captured for %s; subject "
+                            "state unknown this run",
+                            subject.get("name"),
+                        )
+                        continue
                     raw_assignments = await self._pdf_deadlines.enrich(page, raw_assignments)
                     for raw in raw_assignments:
                         normalized = normalize_assignment(
@@ -136,7 +157,20 @@ class SyncService:
             self._repo.finish_sync_run(
                 run_id, "FAILED", stats.subjects_checked, stats.assignments_found, str(exc)
             )
+            self._notify_sync_issue_once(run_id)
             logger.exception("Sync failed")
             raise
         finally:
             await self._browser.close()
+
+    def _notify_sync_issue_once(self, run_id: int) -> None:
+        """Send the §15 sync_issue alert when scanning stops working, but only
+        on the transition into failure — never repeatedly every interval (§14:
+        never repeat the same message)."""
+        previous = self._repo.get_previous_sync_run(run_id)
+        if previous is not None and previous.status == "FAILED":
+            return  # the student was already alerted on the first failure
+        try:
+            self._notifier.sync_issue(datetime.now().strftime("%d %B %Y, %I:%M %p"))
+        except Exception:
+            logger.exception("Failed to send the sync-issue notification")
