@@ -76,6 +76,39 @@ def test_due_soon_assignments(repo: Repository):
     assert [a.external_key for a in due_soon] == ["soon"]
 
 
+def test_manual_deadline_survives_sync(repo: Repository):
+    """A manually set deadline is never overwritten by the portal's N/A."""
+    from datetime import datetime
+
+    subject = repo.upsert_subject("sub-1", "Software Engineering")
+    data = {
+        "external_key": "pdf-1", "title": "Assignment 1",
+        "status": "PENDING", "deadline": None,  # portal stores no date
+    }
+    assignment, _ = repo.upsert_assignment(data, subject.id)
+
+    repo.set_manual_deadline(assignment.id, datetime(2026, 9, 20, 23, 59))
+    # Portal sync comes back with still no deadline...
+    updated, _ = repo.upsert_assignment(dict(data), subject.id)
+    assert updated.deadline == datetime(2026, 9, 20, 23, 59)
+    assert updated.manual_deadline is True
+
+    # Clearing the override restores the portal value.
+    repo.set_manual_deadline(assignment.id, None)
+    cleared, _ = repo.upsert_assignment(dict(data), subject.id)
+    assert cleared.deadline is None
+    assert cleared.manual_deadline is False
+
+
+def test_get_assignment(repo: Repository):
+    subject = repo.upsert_subject("sub-1", "Java")
+    assignment, _ = repo.upsert_assignment(
+        {"external_key": "x", "title": "T", "status": "PENDING"}, subject.id
+    )
+    assert repo.get_assignment(assignment.id) is not None
+    assert repo.get_assignment(9999) is None
+
+
 def test_sync_run_lifecycle(repo: Repository):
     run_id = repo.start_sync_run()
     repo.finish_sync_run(run_id, "SUCCESS", subjects_checked=6, assignments_found=10)

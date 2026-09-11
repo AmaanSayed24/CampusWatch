@@ -109,7 +109,9 @@ class SyncService:
         try:
             page = await self._browser.start()
             page = await self._login.ensure_authenticated(page)
-            subjects = await self._classroom.discover_subjects(page)
+            subjects = await self._classroom.discover_subjects(
+                page, self._repo.get_classroom_urls()
+            )
             if not subjects:
                 # A transient capture failure must never deactivate subjects
                 # discovered on earlier successful runs.
@@ -169,14 +171,22 @@ class SyncService:
                             )
                             self._reminders.notify_new(assignment)
                         elif change.deadline_changed:
-                            stats.deadline_changes += 1
-                            logger.info(
-                                "Deadline changed for %s: %s -> %s",
-                                normalized["title"], change.old_deadline, change.new_deadline,
-                            )
-                            self._reminders.notify_deadline_change(
-                                assignment, change.old_deadline, change.new_deadline
-                            )
+                            if existing is not None and existing.manual_deadline:
+                                # A manual deadline override beats whatever the
+                                # portal provides; the upsert preserves it.
+                                logger.debug(
+                                    "Keeping manual deadline for %s (portal says %s)",
+                                    normalized["title"], change.new_deadline,
+                                )
+                            else:
+                                stats.deadline_changes += 1
+                                logger.info(
+                                    "Deadline changed for %s: %s -> %s",
+                                    normalized["title"], change.old_deadline, change.new_deadline,
+                                )
+                                self._reminders.notify_deadline_change(
+                                    assignment, change.old_deadline, change.new_deadline
+                                )
 
                 except Exception:
                     stats.errors += 1

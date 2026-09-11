@@ -26,4 +26,26 @@ def create_db_engine(settings: Settings):
 def init_db(settings: Settings) -> sessionmaker[Session]:
     engine = create_db_engine(settings)
     Base.metadata.create_all(engine)
+    _migrate(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+def _migrate(engine) -> None:
+    """Lightweight column migrations for databases created by older versions.
+
+    create_all() only adds missing *tables*, not columns, so new columns on
+    existing tables are added here. Duplicate-column errors mean the migration
+    already ran and are ignored.
+    """
+    from sqlalchemy import text
+
+    statements = (
+        "ALTER TABLE assignments ADD COLUMN manual_deadline BOOLEAN NOT NULL DEFAULT 0",
+        "ALTER TABLE pdf_deadline_cache ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 0",
+    )
+    with engine.begin() as conn:
+        for statement in statements:
+            try:
+                conn.execute(text(statement))
+            except Exception:
+                pass  # column already exists

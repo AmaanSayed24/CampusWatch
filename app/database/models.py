@@ -42,6 +42,9 @@ class Assignment(Base):
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String, default="PENDING", nullable=False)
+    # Manual deadline override (set via `set-deadline`): survives portal syncs
+    # until cleared, for deadlines the faculty announces outside the portal.
+    manual_deadline: Mapped[bool] = mapped_column(default=False, nullable=False)
     source_url: Mapped[str | None] = mapped_column(String, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -96,3 +99,6 @@ class PdfDeadlineCache(Base):
     confidence: Mapped[float] = mapped_column(default=0.0, nullable=False)
     snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Version of the extraction logic that produced this row; a bump in
+    # PARSER_VERSION triggers a fresh analysis of previously scanned PDFs.
+    parser_version: Mapped[int] = mapped_column(default=0, nullable=False)

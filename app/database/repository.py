@@ -46,6 +46,26 @@ class Repository:
         with self._session_factory() as session:
             return session.scalar(select(Subject).where(Subject.portal_id == portal_id))
 
+    def get_classroom_urls(self) -> list[str]:
+        """Classroom *subjects* page URLs derived from known subject URLs.
+
+        The SPA serves the subject list at /classrooms/{id}/subjects (the base
+        /classrooms/{id} route redirects to the dashboard), so the fallback
+        URLs point at the exact page that fires /api/subjects.
+        """
+        with self._session_factory() as session:
+            urls = list(session.scalars(select(Subject.url)).all())
+        seen: set[str] = set()
+        result: list[str] = []
+        for url in urls:
+            if not url or "/subjects/" not in url:
+                continue
+            base = url.rsplit("/", 1)[0]  # .../classrooms/{id}/subjects
+            if base not in seen:
+                seen.add(base)
+                result.append(base)
+        return result
+
     def deactivate_subjects_not_in(self, portal_ids: set[str]) -> int:
         """Mark subjects no longer discovered on the portal as inactive."""
         with self._session_factory() as session:
@@ -74,6 +94,7 @@ class Repository:
                 select(Assignment).where(Assignment.external_key == data["external_key"])
             )
             is_new = assignment is None
+            manual_deadline = bool(assignment.manual_deadline) if assignment else False
             if is_new:
                 assignment = Assignment(
                     external_key=data["external_key"], subject_id=subject_id
@@ -84,7 +105,10 @@ class Repository:
             assignment.title = data["title"]
             assignment.description = data.get("description")
             assignment.assigned_at = data.get("assigned_at")
-            assignment.deadline = data.get("deadline")
+            if not manual_deadline:
+                # A manual deadline override (set via the CLI) is never
+                # overwritten by the portal's "no date".
+                assignment.deadline = data.get("deadline")
             assignment.status = data.get("status", "PENDING")
             assignment.source_url = data.get("source_url")
             assignment.content_hash = data.get("content_hash")
@@ -96,6 +120,24 @@ class Repository:
     def get_assignments(self) -> list[Assignment]:
         with self._session_factory() as session:
             return list(session.scalars(select(Assignment).order_by(Assignment.deadline)).all())
+
+    def get_assignment(self, assignment_id: int) -> Assignment | None:
+        with self._session_factory() as session:
+            return session.get(Assignment, assignment_id)
+
+    def set_manual_deadline(self, assignment_id: int, deadline: datetime | None) -> None:
+        """Set or clear a manual deadline override for one assignment.
+
+        A set override (`manual_deadline=True`) is preserved by later syncs;
+        clearing it restores whatever the portal provides (often N/A).
+        """
+        with self._session_factory() as session:
+            assignment = session.get(Assignment, assignment_id)
+            if assignment is None:
+                return
+            assignment.deadline = deadline
+            assignment.manual_deadline = deadline is not None
+            session.commit()
 
     def get_due_soon_assignments(self, within: timedelta) -> list[Assignment]:
         horizon = datetime.now() + within
@@ -199,6 +241,7 @@ class Repository:
         deadline: datetime | None,
         confidence: float = 0.0,
         snippet: str | None = None,
+        parser_version: int = 0,
     ) -> None:
         """Upsert an extraction result (deadline None = nothing reliable found)."""
         with self._session_factory() as session:
@@ -210,5 +253,6 @@ class Repository:
             row.deadline = deadline
             row.confidence = confidence
             row.snippet = snippet
+            row.parser_version = parser_version
             session.commit()
 

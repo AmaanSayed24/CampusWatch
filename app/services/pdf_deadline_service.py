@@ -18,7 +18,7 @@ from playwright.async_api import Page
 
 from app.config.settings import Settings
 from app.database.repository import Repository
-from app.parsers.pdf_parser import extract_deadline_from_pdf
+from app.parsers.pdf_parser import PARSER_VERSION, extract_deadline_from_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -53,40 +53,47 @@ class PdfDeadlineService:
                 continue
 
             cached = self._repo.get_pdf_deadline(url)
-            if cached is not None and cached.confidence == NOT_PDF_CONFIDENCE:
-                continue  # previously validated as a non-PDF payload
-            if cached is None:
-                pdf_bytes, validated_not_pdf = await self._download_pdf(page, url)
-                if validated_not_pdf:
-                    self._repo.save_pdf_deadline(url, None, NOT_PDF_CONFIDENCE)
-                    continue  # HTML page / viewer link: cache and skip forever
-                if pdf_bytes is None:
-                    continue  # transient failure: retry on the next sync
-                match = await asyncio.to_thread(
-                    extract_deadline_from_pdf, pdf_bytes, self._tz
-                )
-                if match is None:
-                    self._repo.save_pdf_deadline(url, None)
-                else:
-                    self._repo.save_pdf_deadline(
-                        url, match.deadline, match.confidence, match.snippet
-                    )
-                cached = self._repo.get_pdf_deadline(url)
-
-            if cached is None or cached.deadline is None:
+            if cached is not None and cached.parser_version == PARSER_VERSION:
+                self._apply_cached_deadline(raw, cached)
                 continue
 
-            raw["deadline_iso"] = cached.deadline.isoformat()
-            raw["description"] = (
-                f"{raw.get('description') or 'Assignment document.'} "
-                f'Deadline extracted from PDF (confidence {cached.confidence:.0%}): '
-                f'"{cached.snippet}"'
-            ).strip()
-            logger.info(
-                "PDF deadline for %s: %s (confidence %.0f%%)",
-                raw.get("title"), cached.deadline, cached.confidence * 100,
+            # First sight of this URL, or the extraction logic improved since
+            # the cached analysis (PARSER_VERSION bump): download and analyse.
+            pdf_bytes, validated_not_pdf = await self._download_pdf(page, url)
+            if validated_not_pdf:
+                self._repo.save_pdf_deadline(
+                    url, None, NOT_PDF_CONFIDENCE, None, PARSER_VERSION
+                )
+                continue  # HTML page / viewer link: cache and skip
+            if pdf_bytes is None:
+                continue  # transient failure: retry on the next sync
+            match = await asyncio.to_thread(
+                extract_deadline_from_pdf, pdf_bytes, self._tz
             )
+            self._repo.save_pdf_deadline(
+                url,
+                match.deadline if match else None,
+                match.confidence if match else 0.0,
+                match.snippet if match else None,
+                PARSER_VERSION,
+            )
+            self._apply_cached_deadline(raw, self._repo.get_pdf_deadline(url))
         return records
+
+    def _apply_cached_deadline(self, raw: dict, cached) -> None:
+        """Copy a cached extraction result into the raw record (N/A stays)."""
+        if cached is None or cached.deadline is None:
+            return  # nothing reliable found (or non-PDF payload): keep N/A
+        raw["deadline_iso"] = cached.deadline.isoformat()
+        raw["description"] = (
+            f"{raw.get('description') or 'Assignment document.'} "
+            f'Deadline extracted from PDF (confidence {cached.confidence:.0%}): '
+            f'"{cached.snippet}"'
+        ).strip()
+        logger.info(
+            "PDF deadline for %s: %s (confidence %.0f%%)",
+            raw.get("title"), cached.deadline, cached.confidence * 100,
+        )
 
     async def _download_pdf(self, page: Page, url: str) -> tuple[bytes | None, bool]:
         """Fetch the payload through the browser session (shares cookies/auth).

@@ -28,6 +28,10 @@ from zoneinfo import ZoneInfo
 
 from app.parsers.deadline_parser import parse_deadline
 
+# Bump when extraction logic improves (formats, keywords, scoring): cached
+# results produced by an older version are re-analysed on the next sync.
+PARSER_VERSION = 2
+
 # Confidence at or above this is treated as a reliable deadline; anything
 # below yields no deadline (N/A) for the assignment.
 RELIABLE_CONFIDENCE = 0.6

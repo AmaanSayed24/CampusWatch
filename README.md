@@ -16,6 +16,9 @@ desktop reminders before submissions are due.
   assignment PDFs (keyword-aware extraction with confidence scoring).
 - **Change detection** — new assignments and deadline changes are detected
   across syncs, with desktop notifications.
+- **Manual deadline override** — for deadlines the faculty announces outside
+  the portal (in class, WhatsApp, ...): `set-deadline` pins a date to any
+  assignment; it survives portal syncs and drives reminders until cleared.
 - **10-minute dashboard** — every scan ends with a full assignment summary
   (subject, title, deadline, classification, total count) sent as a desktop
   notification and recorded in `logs/agent.log`.
@@ -148,6 +151,8 @@ Run with the project's virtual environment (not a system Python):
 | `upcoming` | List assignments due within the largest reminder window. |
 | `overdue` | List assignments past their deadline. |
 | `status` | Show the result of the last sync run. |
+| `set-deadline <id> <when>` | Manually pin a deadline (e.g. `"20/09/2026 11:59 PM"`) to an assignment; survives syncs. |
+| `clear-deadline <id>` | Remove a manual deadline; the portal value (often N/A) is restored. |
 | `test-notification` | Verify desktop notifications work on this machine. |
 
 ## Project layout

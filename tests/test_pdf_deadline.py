@@ -266,6 +266,70 @@ def test_pdf_deadline_service_caches_non_pdf_payload(tmp_path):
     assert len(downloads) == 1
 
 
+def test_parser_version_bump_forces_reanalysis(tmp_path):
+    """Cached results from an older parser are re-analysed after a bump."""
+    import asyncio
+
+    from app.database.connection import init_db
+    from app.parsers.pdf_parser import PARSER_VERSION
+    from app.services.pdf_deadline_service import PdfDeadlineService
+
+    settings_stub = type(
+        "S",
+        (),
+        {
+            "database_url": f"sqlite:///{tmp_path / 't.db'}",
+            "timezone": "Asia/Kolkata",
+        },
+    )()
+    settings_stub.get_timezone = lambda: TZ
+    repo = Repository(init_db(settings_stub))
+    service = PdfDeadlineService(settings_stub, repo)
+
+    pdf_bytes = build_pdf("Assignment 1. Due Date: 25/10/2026 11:59 PM.")
+
+    class _FakeResponse:
+        ok = True
+
+        async def body(self) -> bytes:
+            return pdf_bytes
+
+    class _FakeRequest:
+        def __init__(self, response):
+            self._response = response
+
+        async def get(self, url, *, timeout=None):
+            return self._response
+
+    class _FakePage:
+        def __init__(self, response):
+            self.context = type("C", (), {"request": _FakeRequest(response)})()
+
+    url = "https://example.com/assignment-1.pdf"
+    raw = {
+        "title": "Assignment 1",
+        "url": "https://example.com/classroom",
+        "portal_id": "w-1",
+        "deadline_text": None,
+        "deadline_iso": None,
+        "status": "PENDING",
+        "source_url": url,
+    }
+
+    # Simulate an old parser that found nothing (older version, no deadline).
+    repo.save_pdf_deadline(url, None, 0.0, None, PARSER_VERSION - 1)
+
+    enriched = asyncio.run(service.enrich(_FakePage(_FakeResponse()), [raw]))
+    assert enriched[0]["deadline_iso"] is not None  # re-analysed successfully
+    row = repo.get_pdf_deadline(url)
+    assert row.parser_version == PARSER_VERSION
+    assert row.deadline is not None
+
+    # Now the cache is current: a second pass must NOT re-download.
+    enriched2 = asyncio.run(service.enrich(_FakePage(_FakeResponse()), [dict(raw)]))
+    assert enriched2[0]["deadline_iso"] == enriched[0]["deadline_iso"]
+
+
 def test_normalize_assignment_preserves_document_source_url():
     from app.parsers.assignment_parser import normalize_assignment
 

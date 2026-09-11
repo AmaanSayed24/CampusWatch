@@ -24,27 +24,42 @@ class ClassroomScraper:
     def __init__(self, settings: Settings):
         self._settings = settings
 
-    async def discover_subjects(self, page: Page) -> list[dict]:
-        """Return normalized subject dicts: {portal_id, name, url}."""
+    async def discover_subjects(
+        self, page: Page, classroom_urls: list[str] | None = None
+    ) -> list[dict]:
+        """Return normalized subject dicts: {portal_id, name, url}.
+
+        Attempt 1 uses the UI flow (join page -> "Open" button). Later
+        attempts navigate directly to previously seen classroom URLs — no
+        clicking, no SPA route quirks — which makes the retry deterministic.
+        """
         parsed = urlparse(self._settings.portal_url)
         origin = f"{parsed.scheme}://{parsed.netloc}"
 
         subjects: list[dict] = []
         seen: set[str] = set()
-        attempts = 2
-        for attempt in range(1, attempts + 1):
+        plans: list[str] = ["ui", *(f"url:{url}" for url in (classroom_urls or []))]
+        for attempt, plan in enumerate(plans, 1):
             with ResponseCollector(page, ("/api/subjects",)) as collector:
-                # The subject list API fires on the Classroom pages, not the
-                # dashboard: join page first, then the classroom's subjects page.
-                join_url = f"{origin}/classrooms/join"
-                if attempt == 1:
+                if plan == "ui":
+                    # The subject list API fires on the Classroom pages, not
+                    # the dashboard: join page first, then the classroom's
+                    # subjects page.
+                    join_url = f"{origin}/classrooms/join"
                     await page.goto(join_url, wait_until="domcontentloaded")
+                    # The Open button renders late on a cold SPA; wait for it
+                    # instead of a fixed sleep.
+                    open_button = page.get_by_role(
+                        "button", name=re.compile(r"^Open ", re.I)
+                    ).first
+                    try:
+                        await open_button.wait_for(state="visible", timeout=15_000)
+                    except Exception:
+                        logger.debug("Open button never became visible on the join page")
+                    if await open_button.count() > 0:
+                        await open_button.click()
                 else:
-                    await page.reload(wait_until="domcontentloaded")
-                await page.wait_for_timeout(3_000)
-                open_button = page.get_by_role("button", name=re.compile(r"^Open ", re.I)).first
-                if await open_button.count() > 0:
-                    await open_button.click()
+                    await page.goto(plan[4:], wait_until="domcontentloaded")
                 # Poll until the subjects payload arrives (max 20 s) instead
                 # of a fixed sleep: slow renders no longer get missed.
                 await collector.wait_for(("/api/subjects",), page, timeout_ms=20_000)
@@ -65,9 +80,9 @@ class ClassroomScraper:
                         )
                         subjects.append({"portal_id": portal_id, "name": name, "url": url})
 
-            if subjects or attempt == attempts:
+            if subjects or attempt == len(plans):
                 break
-            logger.warning("No /api/subjects payload captured; retrying page load")
+            logger.warning("No /api/subjects payload captured (plan %s); retrying", plan)
             await page.wait_for_timeout(3_000)
 
         if not subjects:
