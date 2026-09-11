@@ -96,6 +96,82 @@ def test_picks_best_candidate():
     assert match.deadline == datetime(2026, 9, 18, 23, 59)
 
 
+def test_record_sheet_table_dates():
+    """Record-sheet pattern: given date + submission end date side by side."""
+    text = (
+        "MCA 1st SEMESTER ASSIGNMENT 2 RECORD SHEET. Course: MCA Year: 2026-2027. "
+        "Subject Name: Software Engineering. Assignment given date "
+        "21-09-2026 27-09-2026 Assignment submission end date. "
+        "1. Explain Structured System Analysis and Design Methodology (SSADM)."
+    )
+    match = analyse_text_for_deadline(text, TZ)
+    assert match is not None
+    # The submission end date wins, NOT the given date.
+    assert match.deadline == datetime(2026, 9, 27)
+    assert match.confidence >= RELIABLE_CONFIDENCE
+
+
+def test_record_sheet_negative_marker_only():
+    """A date whose only marker is 'given date' is not a deadline -> N/A."""
+    text = "Assignment given date 21-09-2026. Keep this record for reference."
+    match = analyse_text_for_deadline(text, TZ)
+    assert match is None  # given date alone -> below reliable confidence
+
+
+def test_ocr_fallback_used_for_image_pdf(tmp_path):
+    """When pypdf finds no text, the OCR layer is invoked with the images."""
+    import app.parsers.pdf_parser as pdf_parser
+
+    fake_image_pdf = b"%PDF-1.4 fake"
+    calls: list[bytes] = []
+
+    def fake_extract(_bytes: bytes, max_pages: int = 15) -> str:
+        return "   "  # no usable text layer
+
+    def fake_ocr_layers(pdf_bytes: bytes, max_pages: int = 5) -> str:
+        calls.append(pdf_bytes)
+        return (
+            "Software Engineering Assignment 2 Record Sheet. "
+            "Assignment given date 21-09-2026 27-09-2026 "
+            "Assignment submission end date."
+        )
+
+    original_extract = pdf_parser.extract_pdf_text
+    original_layers = pdf_parser._ocr_text_layers
+    pdf_parser.extract_pdf_text = fake_extract
+    pdf_parser._ocr_text_layers = fake_ocr_layers
+    try:
+        match = pdf_parser.extract_deadline_from_pdf(fake_image_pdf, TZ)
+    finally:
+        pdf_parser.extract_pdf_text = original_extract
+        pdf_parser._ocr_text_layers = original_layers
+
+    assert calls == [fake_image_pdf]
+    assert match is not None
+    assert match.deadline == datetime(2026, 9, 27)
+
+
+def test_ocr_fallback_no_engine_returns_none():
+    """Without any OCR engine, an image PDF yields no deadline (no crash)."""
+    import app.parsers.pdf_parser as pdf_parser
+
+    def fake_extract(_bytes: bytes, max_pages: int = 15) -> str:
+        return " "  # no text layer
+
+    def fake_layers(_pdf_bytes: bytes, max_pages: int = 5) -> str:
+        return ""  # no engine available
+
+    original_extract, original_layers = pdf_parser.extract_pdf_text, pdf_parser._ocr_text_layers
+    pdf_parser.extract_pdf_text = fake_extract
+    pdf_parser._ocr_text_layers = fake_layers
+    try:
+        match = pdf_parser.extract_deadline_from_pdf(b"%PDF-1.4 fake", TZ)
+    finally:
+        pdf_parser.extract_pdf_text = original_extract
+        pdf_parser._ocr_text_layers = original_layers
+    assert match is None
+
+
 def test_extract_deadline_from_real_pdf():
     pdf = build_pdf(
         "Data Structures Assignment 1. Due Date: 20/09/2026 11:59 PM. Total marks: 10."

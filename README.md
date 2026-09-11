@@ -95,10 +95,25 @@ The highest-scoring candidate with **confidence ≥ 0.6** is accepted as the
 deadline and its surrounding snippet stored for verification; otherwise the
 assignment falls back to **N/A** (`app/parsers/pdf_parser.py`).
 
-Results are cached in the `pdf_deadline_cache` table (keyed by document URL
-hash), so each PDF is downloaded and parsed at most once. Extraction order
-follows the design doc (§17): webpage metadata → PDF text (implemented) → OCR
-for image-only PDFs (not implemented).
+**Record sheets / image PDFs** — faculty frequently upload *scanned* record
+sheets (a table with "Assignment given date" and "Assignment submission end
+date") where the text is either a picture or vector outlines with **no text
+layer** at all. The agent detects these and **OCRs them**:
+
+1. rasterize each page with **pypdfium2** (pure pip, no binaries);
+2. read the pixels with the **Windows built-in OCR** engine (`winsdk`,
+   `Windows.Media.Ocr`) — no external engine needed on Windows 10/11;
+   falls back to Tesseract if installed.
+
+The record-sheet parser then disambiguates the two side-by-side dates: a
+date labelled "given date" is demoted, a "submission end date" wins. All
+OCR/extraction results are cached with a `PARSER_VERSION`, so if the parser
+is improved in future, previously scanned PDFs are re-analysed
+automatically on the next sync.
+
+Requirements: `pip install -r requirements.txt` (adds `pypdfium2`,
+`winsdk`, `pillow`). If no OCR engine is available the agent logs a one-time
+hint and keeps the deadline as **N/A** — it never crashes.
 
 The agent behaves like a normal logged-in browser user (Playwright + persistent
 browser profile). It never bypasses authentication, CAPTCHA, or portal

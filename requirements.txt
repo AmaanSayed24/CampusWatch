@@ -7,6 +7,12 @@ typer
 pydantic
 pydantic-settings
 pypdf
+# Record-sheet OCR (optional): pypdfium2 rasterizes image/vector PDFs; winsdk
+# reads the pixels via the Windows built-in OCR engine. Both install from pip.
+# If neither OCR engine is available the agent falls back to "N/A" gracefully.
+pypdfium2
+winsdk
+pillow
 tzdata
 pytest
 ruff
