@@ -45,7 +45,9 @@ class ClassroomScraper:
                 open_button = page.get_by_role("button", name=re.compile(r"^Open ", re.I)).first
                 if await open_button.count() > 0:
                     await open_button.click()
-                await page.wait_for_timeout(5_000)
+                # Poll until the subjects payload arrives (max 20 s) instead
+                # of a fixed sleep: slow renders no longer get missed.
+                await collector.wait_for(("/api/subjects",), page, timeout_ms=20_000)
 
                 data = collector.decrypted("/api/subjects")
                 if data:

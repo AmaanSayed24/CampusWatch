@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Iterable
 from urllib.parse import urlparse
 
@@ -71,6 +72,23 @@ class ResponseCollector:
     def first(self, pattern: str) -> str | None:
         """Raw body of the first pattern match, or None."""
         return self._bodies.get(pattern)
+
+    async def wait_for(
+        self, patterns: Iterable[str], page, timeout_ms: int, poll_ms: int = 500
+    ) -> bool:
+        """Poll until every pattern has a captured body (or timeout).
+
+        Polling instead of a fixed sleep makes capture robust against slow
+        SPA renders: the navigation continues as soon as the payloads arrive.
+        Returns True when all patterns were captured.
+        """
+        patterns = tuple(patterns)
+        deadline = time.monotonic() + timeout_ms / 1000
+        while not all(self.first(p) for p in patterns):
+            if time.monotonic() >= deadline:
+                return False
+            await page.wait_for_timeout(poll_ms)
+        return True
 
     def decrypted(self, pattern: str) -> dict | None:
         body = self.first(pattern)

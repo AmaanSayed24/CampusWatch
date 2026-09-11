@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     manual_login_timeout_seconds: int = 300
 
     # --- Scheduling ---
-    check_interval_minutes: int = 60
+    check_interval_minutes: int = 10
 
     # --- Reminders ---
     reminder_windows: str = "7d,3d,24h,3h"

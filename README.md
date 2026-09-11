@@ -16,6 +16,9 @@ desktop reminders before submissions are due.
   assignment PDFs (keyword-aware extraction with confidence scoring).
 - **Change detection** — new assignments and deadline changes are detected
   across syncs, with desktop notifications.
+- **10-minute dashboard** — every scan ends with a full assignment summary
+  (subject, title, deadline, classification, total count) sent as a desktop
+  notification and recorded in `logs/agent.log`.
 - **Reminder windows** — configurable `7d, 3d, 24h, 3h` reminders plus a daily
   summary, driven by an APScheduler loop.
 - **Local & private** — everything (database, browser profile, logs) stays on
@@ -41,6 +44,27 @@ Login (persisted browser session)
    -> detect new / deadline-changed assignments
    -> send desktop notifications (new, deadline windows, overdue)
 ```
+
+### 10-minute dashboard summary
+
+The scheduler scans every `CHECK_INTERVAL_MINUTES` (default **10**). After each
+scan the agent classifies **every** outstanding assignment and sends the full
+summary as one desktop notification:
+
+- each entry: subject name, assignment title, deadline
+- classification: **OVERDUE** (deadline passed), **UPCOMING** (future
+  deadline), **NO DEADLINE** (no date available)
+- overdue assignments are retained, never filtered out
+- total counts in the header (outstanding / overdue / upcoming / no deadline /
+  submitted)
+- the complete text is also written to `logs/agent.log` (`SUMMARY |` lines),
+  so long summaries are never lost to notification truncation (the OS toast
+  itself is capped at ~250 chars — the header + counts are what you see on
+  screen)
+
+Existing SQLite tracking, change detection and windowed reminders all continue
+to work on top of this flow.
+
 
 The AES passphrase was recovered from the portal's JS bundle and is implemented
 in `app/automation/portal_crypto.py` using only the standard library.
@@ -118,7 +142,7 @@ Run with the project's virtual environment (not a system Python):
 
 | Command | Purpose |
 |---|---|
-| `sync` | Start the scheduler (immediate sync, then every `CHECK_INTERVAL_MINUTES`). |
+| `sync` | Start the scheduler (immediate sync, then every `CHECK_INTERVAL_MINUTES`, default 10). |
 | `sync-now` | Run a single manual sync pass against the portal. |
 | `assignments` | List all tracked assignments. |
 | `upcoming` | List assignments due within the largest reminder window. |

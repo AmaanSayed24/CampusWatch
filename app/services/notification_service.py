@@ -13,6 +13,17 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "CampusWatch"
 
+# Windows balloon tips cap the message at 256 chars (NOTIFYICONDATAW.szInfo);
+# longer text crashes plyer's background toast thread with ValueError.
+MAX_TOAST_CHARS = 250
+
+
+def truncate_for_toast(message: str) -> str:
+    """Fit a message into the OS toast limit; the full text lives in the log."""
+    if len(message) <= MAX_TOAST_CHARS:
+        return message
+    return message[: MAX_TOAST_CHARS - 3].rstrip() + "..."
+
 
 class NotificationService:
     def __init__(self, settings: Settings):
@@ -25,6 +36,7 @@ class NotificationService:
         try:
             from plyer import notification
 
+            message = truncate_for_toast(message)
             notification.notify(
                 title=f"{APP_NAME}: {title}",
                 message=message,
@@ -111,3 +123,7 @@ class NotificationService:
 
     def daily_summary(self, text: str) -> None:
         return self.send("📋 College Daily Summary", text)
+
+    def assignment_summary(self, text: str) -> None:
+        """Full post-scan dashboard (all assignments, classified)."""
+        return self.send("📋 Assignment Summary", text)

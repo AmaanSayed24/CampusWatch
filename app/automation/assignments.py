@@ -62,7 +62,9 @@ class AssignmentScraper:
                     await page.get_by_text("Classwork", exact=False).first.click(timeout=8_000)
                 except Exception:
                     logger.debug("Classwork tab click failed for %s", subject.get("name"))
-                await page.wait_for_timeout(4_000)
+                # Poll until both Classwork payloads arrive (max 20 s) instead
+                # of a fixed sleep; slower renders no longer get missed.
+                await collector.wait_for((works_url, topics_url), page, timeout_ms=20_000)
 
                 works_data = collector.decrypted(works_url)
                 topics_data = collector.decrypted(topics_url)

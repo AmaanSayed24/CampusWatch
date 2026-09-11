@@ -12,6 +12,7 @@ from app.database.models import Assignment, Subject
 from app.database.repository import Repository
 from app.services.deadline_engine import time_remaining
 from app.services.notification_service import NotificationService
+from app.utils.dates import format_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,63 @@ class ReminderService:
                 sent_count += 1
 
         return sent_count
+
+    def build_assignment_summary(self) -> str:
+        """Full post-scan dashboard text (§ new 10-minute scan flow).
+
+        Every active assignment is classified into exactly one bucket:
+        OVERDUE (deadline passed), UPCOMING (future deadline) or NO DEADLINE.
+        Overdue assignments are retained, never filtered out. Already
+        SUBMITTED work is excluded from the buckets but reported in the
+        header so the summary stays complete.
+        """
+        from datetime import datetime
+
+        tz = self._settings.get_timezone()
+        # Deadlines are stored as naive wall-time in the configured timezone.
+        now = datetime.now(tz).replace(tzinfo=None)
+
+        all_assignments = self._repo.get_assignments()
+        outstanding = [a for a in all_assignments if a.status != "SUBMITTED"]
+        submitted = [a for a in all_assignments if a.status == "SUBMITTED"]
+
+        overdue: list[Assignment] = []
+        upcoming: list[Assignment] = []
+        no_deadline: list[Assignment] = []
+        for assignment in outstanding:
+            if assignment.deadline is None:
+                no_deadline.append(assignment)
+            elif assignment.deadline < now:
+                overdue.append(assignment)
+            else:
+                upcoming.append(assignment)
+        overdue.sort(key=lambda a: a.deadline)
+        upcoming.sort(key=lambda a: a.deadline)
+
+        lines = [
+            f"COLLEGE ASSIGNMENT SUMMARY — {len(outstanding)} outstanding "
+            f"({len(overdue)} overdue, {len(upcoming)} upcoming, "
+            f"{len(no_deadline)} no deadline), {len(submitted)} submitted",
+        ]
+
+        for label, group, icon in (
+            ("❗ OVERDUE", overdue, "❗"),
+            ("🟠 UPCOMING", upcoming, "🟠"),
+            ("➖ NO DEADLINE", no_deadline, "➖"),
+        ):
+            lines.append("")
+            lines.append(f"{label} ({len(group)})")
+            for assignment in group:
+                subject_name = self._subject_name(assignment)
+                if assignment.deadline is None:
+                    lines.append(f"{icon} {subject_name} — {assignment.title}")
+                else:
+                    lines.append(
+                        f"{icon} {subject_name} — {assignment.title} — "
+                        f"due {format_deadline(assignment.deadline)}"
+                    )
+
+        return "\n".join(lines)
 
     def build_daily_summary(self) -> str:
         from datetime import datetime

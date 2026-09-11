@@ -148,7 +148,9 @@ class Repository:
 
     def start_sync_run(self) -> int:
         with self._session_factory() as session:
-            run = SyncRun(status="RUNNING")
+            # Local time explicitly, because SQLite's func.now() default
+            # writes UTC while finish_sync_run records local time.
+            run = SyncRun(status="RUNNING", started_at=datetime.now())
             session.add(run)
             session.commit()
             return run.id
