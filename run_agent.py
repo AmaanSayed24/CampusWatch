@@ -8,6 +8,7 @@ Usage:
     python run_agent.py overdue
     python run_agent.py status
     python run_agent.py test-notification
+    python run_agent.py gui           (desktop dashboard - professional GUI)
 """
 
 import sys

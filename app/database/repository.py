@@ -229,6 +229,12 @@ class Repository:
                 .limit(1)
             )
 
+    def get_sync_runs(self, limit: int = 50) -> list[SyncRun]:
+        """Most recent sync runs, newest first (GUI history panel)."""
+        with self._session_factory() as session:
+            stmt = select(SyncRun).order_by(SyncRun.id.desc()).limit(limit)
+            return list(session.scalars(stmt).all())
+
     # --- PDF deadline extraction cache ---
 
     def get_pdf_deadline(self, url: str) -> PdfDeadlineCache | None:

@@ -43,6 +43,14 @@ def _print_assignments(assignments: list[Assignment], subject_names: dict[int, s
 
 
 @app.command()
+def gui():
+    """Open the desktop dashboard (professional Tkinter GUI front-end)."""
+    from app.gui import run_gui
+
+    raise typer.Exit(run_gui())
+
+
+@app.command()
 def sync():
     """Start the scheduler (immediate sync, then every CHECK_INTERVAL_MINUTES)."""
     App().run_scheduled()
